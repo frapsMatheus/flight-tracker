@@ -14,11 +14,9 @@ echo "=== Generating docs/config.js from environment ==="
 if [ -f .env ]; then
     SUPABASE_URL=$(grep '^SUPABASE_URL=' .env | head -n 1 | cut -d '=' -f2-)
     SUPABASE_ANON_KEY=$(grep '^SUPABASE_ANON_KEY=' .env | head -n 1 | cut -d '=' -f2-)
-    OBSERVED_FLIGHTS=$(grep '^OBSERVED_FLIGHTS=' .env | head -n 1 | cut -d '=' -f2- | sed "s/^'//" | sed "s/'$//")
     cat << EOF > docs/config.js
 const SUPABASE_URL = "${SUPABASE_URL}";
 const SUPABASE_ANON_KEY = "${SUPABASE_ANON_KEY}";
-const STORED_FLIGHTS = ${OBSERVED_FLIGHTS:-[]};
 EOF
     echo "docs/config.js updated."
 else
