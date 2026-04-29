@@ -1,5 +1,6 @@
 let supabaseClient = null;
 let currentUser = null;
+let editingFlightId = null;
 
 if (typeof SUPABASE_URL !== 'undefined' && typeof SUPABASE_ANON_KEY !== 'undefined' && SUPABASE_URL !== "YOUR_SUPABASE_URL") {
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -93,11 +94,6 @@ async function setupDashboard() {
         <span class="user-email"><i class="fa-solid fa-user"></i> ${currentUser.email}</span>
         <button class="btn-secondary" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
     `;
-
-    // Check for stored flights
-    if (typeof STORED_FLIGHTS !== 'undefined' && STORED_FLIGHTS && STORED_FLIGHTS.length > 0) {
-        document.getElementById("stored-flights-wrapper").classList.remove("hidden");
-    }
 
     // Fetch user profile keys
     fetchUserProfile();
@@ -203,9 +199,14 @@ function renderFlights(flights) {
                         <p class="flight-route"><i class="fa-solid fa-calendar-days"></i> ${dates}</p>
                     </div>
                 </div>
-                    <button class="btn-delete" onclick="deleteFlight('${flight.id}')" title="Delete Observation">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
+                    <div class="flight-actions" style="display: flex; gap: 0.75rem;">
+                        <button class="btn-edit" onclick="editFlight('${flight.id}')" title="Edit Observation" style="background: none; border: none; color: var(--primary); cursor: pointer; font-size: 1.25rem;">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button class="btn-delete" onclick="deleteFlight('${flight.id}')" title="Delete Observation">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -236,7 +237,7 @@ async function addFlight(e) {
 
     const btn = document.getElementById("btn-add-flight");
     const originalText = btn.innerHTML;
-    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Adding...`;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${editingFlightId ? 'Updating...' : 'Adding...'}`;
     btn.disabled = true;
 
     const flight_config = {
@@ -255,19 +256,34 @@ async function addFlight(e) {
     }
 
     try {
-        const { error } = await supabaseClient
-            .from('observed_flights')
-            .insert({
-                user_id: currentUser.id,
-                title: title,
-                flight_config: flight_config
-            });
+        let res;
+        if (editingFlightId) {
+            res = await supabaseClient
+                .from('observed_flights')
+                .update({
+                    title: title,
+                    flight_config: flight_config
+                })
+                .eq('id', editingFlightId);
+        } else {
+            res = await supabaseClient
+                .from('observed_flights')
+                .insert({
+                    user_id: currentUser.id,
+                    title: title,
+                    flight_config: flight_config
+                });
+        }
 
-        if (error) throw error;
+        if (res.error) throw res.error;
         
-        document.getElementById("flight-form").reset();
-        document.getElementById("flight_type").value = "1";
-        document.getElementById("adults").value = "1";
+        if (editingFlightId) {
+            cancelEdit();
+        } else {
+            document.getElementById("flight-form").reset();
+            document.getElementById("flight_type").value = "1";
+            document.getElementById("adults").value = "1";
+        }
         
         fetchObservedFlights();
     } catch (e) {
@@ -445,58 +461,54 @@ function selectSuggestion(inputId, dropdownId, code) {
     input.focus();
 }
 
-window.selectSuggestion = selectSuggestion;
+async function editFlight(id) {
+    try {
+        const { data, error } = await supabaseClient
+            .from('observed_flights')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-async function addStoredFlights() {
-    if (typeof STORED_FLIGHTS === 'undefined' || !STORED_FLIGHTS || STORED_FLIGHTS.length === 0) {
-        alert("No stored flights found in configuration.");
-        return;
+        if (error) throw error;
+        if (!data) return;
+
+        editingFlightId = id;
+        const config = data.flight_config;
+
+        document.getElementById("form-title").innerHTML = `<i class="fa-solid fa-pen-to-square"></i> Edit Flight`;
+        document.getElementById("btn-add-flight").innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Update Flight`;
+        document.getElementById("btn-cancel-edit").classList.remove("hidden");
+
+        document.getElementById("flight_title").value = data.title;
+        document.getElementById("departure_id").value = config.departure_id;
+        document.getElementById("arrival_id").value = config.arrival_id;
+        document.getElementById("outbound_date").value = config.outbound_date;
+        document.getElementById("return_date").value = config.return_date || "";
+        document.getElementById("flight_type").value = config.type;
+        document.getElementById("adults").value = config.adults;
+
+        document.getElementById("flight_title").focus();
+    } catch (e) {
+        console.error("Error loading flight for edit:", e);
+        alert("Failed to load flight data.");
     }
-
-    const btn = document.getElementById("btn-add-stored");
-    const originalText = btn.innerHTML;
-    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Adding...`;
-    btn.disabled = true;
-
-    let addedCount = 0;
-    for (const flight of STORED_FLIGHTS) {
-        try {
-            const flight_config = {
-                departure_id: flight.departure_id,
-                arrival_id: flight.arrival_id,
-                outbound_date: flight.outbound_date,
-                type: flight.type || 1,
-                adults: flight.adults || 1,
-                currency: "BRL",
-                hl: "pt-br",
-                gl: "br"
-            };
-            if (flight.return_date) {
-                flight_config.return_date = flight.return_date;
-            }
-
-            const { error } = await supabaseClient
-                .from('observed_flights')
-                .insert({
-                    user_id: currentUser.id,
-                    title: flight.title,
-                    flight_config: flight_config
-                });
-
-            if (error) throw error;
-            addedCount++;
-        } catch (e) {
-            console.error("Error adding stored flight:", e);
-        }
-    }
-
-    alert(`Successfully added ${addedCount} stored flight(s).`);
-    btn.innerHTML = originalText;
-    btn.disabled = false;
-    fetchObservedFlights();
 }
 
-window.addStoredFlights = addStoredFlights;
+function cancelEdit() {
+    editingFlightId = null;
+    document.getElementById("form-title").innerHTML = `<i class="fa-solid fa-plus"></i> Observe New Flight`;
+    document.getElementById("btn-add-flight").innerHTML = `<i class="fa-solid fa-circle-plus"></i> Add Flight`;
+    document.getElementById("btn-cancel-edit").classList.add("hidden");
+    
+    document.getElementById("flight-form").reset();
+    document.getElementById("flight_type").value = "1";
+    document.getElementById("adults").value = "1";
+}
+
+window.editFlight = editFlight;
+window.cancelEdit = cancelEdit;
+
+window.selectSuggestion = selectSuggestion;
 
 window.logout = logout;
 window.deleteFlight = deleteFlight;

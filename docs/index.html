@@ -84,7 +84,7 @@
 
                     <!-- Add Flight Card -->
                     <div class="glass-card add-flight-card">
-                        <h3><i class="fa-solid fa-plus"></i> Observe New Flight</h3>
+                        <h3 id="form-title"><i class="fa-solid fa-plus"></i> Observe New Flight</h3>
                         <form id="flight-form">
                             <div class="input-group">
                                 <label for="flight_title">Title</label>
@@ -134,12 +134,12 @@
                             </div>
 
 
-                            <button type="submit" id="btn-add-flight" class="btn-primary w-full">
-                                <i class="fa-solid fa-circle-plus"></i> Add Flight
-                            </button>
-                            <div id="stored-flights-wrapper" style="margin-top: 1rem; border-top: 1px solid var(--card-border); padding-top: 1rem;" class="hidden">
-                                <button type="button" id="btn-add-stored" class="btn-secondary w-full" onclick="addStoredFlights()">
-                                    <i class="fa-solid fa-cloud-arrow-down"></i> Add Stored Flights
+                            <div class="form-actions" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                <button type="submit" id="btn-add-flight" class="btn-primary w-full">
+                                    <i class="fa-solid fa-circle-plus"></i> Add Flight
+                                </button>
+                                <button type="button" id="btn-cancel-edit" class="btn-secondary w-full hidden" onclick="cancelEdit()">
+                                    <i class="fa-solid fa-xmark"></i> Cancel Edit
                                 </button>
                             </div>
                         </form>
