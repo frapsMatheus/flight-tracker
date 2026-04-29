@@ -159,7 +159,7 @@ def process_user_flights(supabase: Client, user):
         print(f"Sending email report to {email}...")
         try:
             r = resend.Emails.send({
-                "from": "onboarding@resend.dev",
+                "from": "flight@fraps.dev",
                 "to": email,
                 "subject": "FlightBot: Prices Update",
                 "html": results_html
