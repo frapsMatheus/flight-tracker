@@ -10,6 +10,18 @@ if [ ! -f .env ]; then
         exit 1
     fi
 fi
+echo "=== Generating docs/config.js from environment ==="
+if [ -f .env ]; then
+    SUPABASE_URL=$(grep '^SUPABASE_URL=' .env | head -n 1 | cut -d '=' -f2-)
+    SUPABASE_ANON_KEY=$(grep '^SUPABASE_ANON_KEY=' .env | head -n 1 | cut -d '=' -f2-)
+    cat << EOF > docs/config.js
+const SUPABASE_URL = "${SUPABASE_URL}";
+const SUPABASE_ANON_KEY = "${SUPABASE_ANON_KEY}";
+EOF
+    echo "docs/config.js updated."
+else
+    echo "Warning: .env missing."
+fi
 
 echo "=== Creating Virtual Environment ==="
 python3 -m venv .venv

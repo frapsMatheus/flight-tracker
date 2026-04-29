@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlightBot Dashboard</title>
+    <meta name="description" content="Track your flights effortlessly with FlightBot.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-glow"></div>
+    
+    <nav class="navbar">
+        <div class="logo">
+            <i class="fa-solid fa-plane-departure"></i>
+            <span>Flight<span>Bot</span></span>
+        </div>
+        <div class="nav-auth" id="nav-auth">
+            <!-- Auth state rendered here -->
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Login Section (Logged Out) -->
+        <section id="login-section" class="hero-section">
+            <div class="hero-content">
+                <h1>Track Flight Prices <br><span class="gradient-text">Like Magic</span></h1>
+                <p>Set up automated price tracking for your dream destinations. Get notified when prices drop.</p>
+                <form id="login-form" class="auth-form">
+                    <div class="input-group">
+                        <label for="login_email">Email Address</label>
+                        <input type="email" id="login_email" placeholder="you@example.com" required>
+                    </div>
+                    <button type="button" id="btn-send-otp" class="btn-primary w-full">
+                        <i class="fa-solid fa-paper-plane"></i> Send Verification Code
+                    </button>
+                    
+                    <div id="otp-group" class="input-group hidden" style="margin-top: 1.5rem;">
+                        <label for="login_otp">Verification Code</label>
+                        <input type="text" id="login_otp" placeholder="Enter 6-digit code">
+                        <button type="submit" id="btn-verify-otp" class="btn-primary w-full" style="margin-top: 1rem;">
+                            <i class="fa-solid fa-right-to-bracket"></i> Verify & Login
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="hero-visual">
+                <div class="glass-card plane-card">
+                    <i class="fa-solid fa-plane"></i>
+                </div>
+                <div class="glass-card price-card">
+                    <span class="currency">BRL</span>
+                    <span class="amount">1.250</span>
+                    <span class="trend down"><i class="fa-solid fa-arrow-trend-down"></i> -15%</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard Section (Logged In) -->
+        <section id="dashboard-section" class="dashboard-section hidden">
+            <div class="dashboard-grid">
+                <!-- Left Column: Config & Add Flight -->
+                <div class="sidebar">
+                    <!-- API Keys Card -->
+                    <div class="glass-card config-card">
+                        <h3><i class="fa-solid fa-key"></i> API Credentials</h3>
+                        <p class="subtitle">Required to fetch prices and send alerts.</p>
+                        <form id="keys-form">
+                            <div class="input-group">
+                                <label for="serpapi_key">SerpAPI Key</label>
+                                <div class="input-wrapper">
+                                    <i class="fa-solid fa-lock"></i>
+                                    <input type="password" id="serpapi_key" placeholder="Enter SerpAPI Key">
+                                    <button type="button" class="toggle-password" onclick="togglePassword('serpapi_key')">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <label for="resend_api_key">Resend API Key</label>
+                                <div class="input-wrapper">
+                                    <i class="fa-solid fa-lock"></i>
+                                    <input type="password" id="resend_api_key" placeholder="Enter Resend API Key">
+                                    <button type="button" class="toggle-password" onclick="togglePassword('resend_api_key')">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="submit" id="btn-save-keys" class="btn-secondary">
+                                <i class="fa-solid fa-floppy-disk"></i> Save Keys
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Add Flight Card -->
+                    <div class="glass-card add-flight-card">
+                        <h3><i class="fa-solid fa-plus"></i> Observe New Flight</h3>
+                        <form id="flight-form">
+                            <div class="input-group">
+                                <label for="flight_title">Title</label>
+                                <input type="text" id="flight_title" placeholder="e.g. São Paulo (Vacation)" required>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="departure_id">Origin (IATA)</label>
+                                    <input type="text" id="departure_id" placeholder="e.g. GRU" required maxlength="3" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                                <div class="input-group">
+                                    <label for="arrival_id">Destination (IATA)</label>
+                                    <input type="text" id="arrival_id" placeholder="e.g. JFK" required maxlength="3" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="outbound_date">Departure Date</label>
+                                    <input type="date" id="outbound_date" required>
+                                </div>
+                                <div class="input-group">
+                                    <label for="return_date">Return Date</label>
+                                    <input type="date" id="return_date">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label for="flight_type">Type</label>
+                                    <select id="flight_type">
+                                        <option value="1">Round Trip</option>
+                                        <option value="2">One Way</option>
+                                    </select>
+                                </div>
+                                <div class="input-group">
+                                    <label for="adults">Adults</label>
+                                    <input type="number" id="adults" value="1" min="1" max="10">
+                                </div>
+                            </div>
+
+
+                            <button type="submit" id="btn-add-flight" class="btn-primary w-full">
+                                <i class="fa-solid fa-circle-plus"></i> Add Flight
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Right Column: Flight List -->
+                <div class="main-content">
+                    <div class="section-header">
+                        <h2><i class="fa-solid fa-list"></i> Your Observed Flights</h2>
+                        <span class="badge" id="flight-count">0 Flights</span>
+                    </div>
+                    
+                    <div id="flights-container" class="flights-list">
+                        <!-- Flights rendered here -->
+                        <div class="empty-state">
+                            <i class="fa-solid fa-plane-slash"></i>
+                            <p>No flights observed yet. Add your first flight to get started.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

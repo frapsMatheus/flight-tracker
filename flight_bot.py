@@ -1,30 +1,28 @@
 import os
 import json
+import datetime
 import requests
 import resend
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
-# Load local .env for testing (in GitHub Actions, variables come from Secrets)
+# Load local .env for testing
 load_dotenv()
 
-SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-TARGET_EMAIL = os.environ.get("TARGET_EMAIL")
-OBSERVED_FLIGHTS_JSON = os.environ.get("OBSERVED_FLIGHTS", "[]")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-resend.api_key = RESEND_API_KEY
-
-def fetch_flights(flight_config):
+def fetch_flights(flight_config, serpapi_key):
     params = {
-        "api_key": SERPAPI_KEY,
+        "api_key": serpapi_key,
         "engine": "google_flights",
         "hl": "pt-br",
         "gl": "br",
         "currency": "BRL",
-        "deep_search": "true", # Requested for precision
-        "sort_by": "2", # Always sort by price
+        "deep_search": "true",
+        "sort_by": "2",
     }
-    # Append all relevant keys from flight_config
+    
     for key, value in flight_config.items():
         if key != "title":
             if isinstance(value, (dict, list)):
@@ -40,57 +38,105 @@ def fetch_flights(flight_config):
         print(f"Error fetching {flight_config.get('title')}: {e}")
         return None
 
-def main():
-    if not SERPAPI_KEY or not RESEND_API_KEY or not TARGET_EMAIL:
-        print("Missing required environment variables (SERPAPI_KEY, RESEND_API_KEY, TARGET_EMAIL).")
+def process_user_flights(supabase: Client, user):
+    user_id = user.get("id")
+    email = user.get("email")
+    serpapi_key = user.get("serpapi_key")
+    resend_api_key = user.get("resend_api_key")
+
+    if not serpapi_key or not resend_api_key:
+        print(f"Skipping user {email}: Missing API keys.")
         return
 
+    print(f"\nProcessing flights for user: {email}...")
+
+    # Fetch observed flights for this user
     try:
-        flights_to_observe = json.loads(OBSERVED_FLIGHTS_JSON)
+        response = supabase.table("observed_flights").select("*").eq("user_id", user_id).execute()
+        flights = response.data
     except Exception as e:
-        print(f"Error parsing OBSERVED_FLIGHTS: {e}")
+        print(f"Error fetching flights for {email}: {e}")
         return
 
-    results_html = "<h1>Flight Price Deals Report</h1><ul>"
+    if not flights:
+        print(f"No flights observed for {email}.")
+        return
 
-    for flight in flights_to_observe:
+    resend.api_key = resend_api_key
+    results_html = f"<h1>Flight Price Deals Report</h1><p>Hi {email}, here is your update:</p><ul>"
+    checked_any = False
+
+    for flight in flights:
         title = flight.get("title", "Unknown Flight")
-        print(f"Searching: {title}...")
-        
-        data = fetch_flights(flight)
-        if not data:
-            results_html += f"<li><strong>{title}</strong>: Failed to fetch data.</li>"
-            continue
-        
-        flights_list = data.get("best_flights", [])
-        if not flights_list:
-            flights_list = data.get("other_flights", [])
+        flight_config = flight.get("flight_config", {})
+
+        print(f"  -> Searching: {title}...")
+        checked_any = True
             
-        if not flights_list:
-            results_html += f"<li><strong>{title}</strong>: No flights found.</li>"
-            continue
+            data = fetch_flights(flight_config, serpapi_key)
+            if not data:
+                results_html += f"<li><strong>{title}</strong>: Failed to fetch data.</li>"
+                continue
             
-        best = flights_list[0] 
-        price = best.get("price", "N/A")
-        
-        search_metadata = data.get("search_metadata", {})
-        prettify_html_file = search_metadata.get("prettify_html_file", "#")
-        
-        results_html += f"<li><p><strong>{title}</strong> - Minimum price: <strong>{price} BRL</strong></p><a href='{prettify_html_file}'>View Prettified Search Results</a></li>"
+            flights_list = data.get("best_flights", [])
+            if not flights_list:
+                flights_list = data.get("other_flights", [])
+                
+            if not flights_list:
+                results_html += f"<li><strong>{title}</strong>: No flights found.</li>"
+            else:
+                best = flights_list[0] 
+                price = best.get("price", "N/A")
+                search_metadata = data.get("search_metadata", {})
+                prettify_html_file = search_metadata.get("prettify_html_file", "#")
+                results_html += f"<li><p><strong>{title}</strong> - Minimum price: <strong>{price} BRL</strong></p><a href='{prettify_html_file}'>View Prettified Search Results</a></li>"
+
 
     results_html += "</ul>"
 
-    print("Sending email report...")
+    if checked_any:
+        print(f"Sending email report to {email}...")
+        try:
+            r = resend.Emails.send({
+                "from": "onboarding@resend.dev",
+                "to": email,
+                "subject": "FlightBot: Prices Update",
+                "html": results_html
+            })
+            print(f"Email sent successfully: {r}")
+        except Exception as e:
+            print(f"Error sending email to {email}: {e}")
+    else:
+        print(f"No flights needed checking for {email} in this run.")
+
+def main():
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        print("Missing required environment variables (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY).")
+        print("Please configure them in your secrets / .env file.")
+        return
+
+    print("Initializing Supabase Client...")
     try:
-        r = resend.Emails.send({
-            "from": "onboarding@resend.dev", # Required for resend sandboxes unless custom domain is verified
-            "to": TARGET_EMAIL,
-            "subject": "Flight Prices Update",
-            "html": results_html
-        })
-        print(f"Email sent successfully: {r}")
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     except Exception as e:
-        print(f"Error sending email: {e}")
+        print(f"Failed to connect to Supabase: {e}")
+        return
+
+    # Fetch all users
+    try:
+        response = supabase.table("user_profiles").select("*").execute()
+        users = response.data
+    except Exception as e:
+        print(f"Error fetching user profiles: {e}")
+        return
+
+    if not users:
+        print("No user profiles found in Supabase.")
+        return
+
+    print(f"Found {len(users)} user profiles.")
+    for user in users:
+        process_user_flights(supabase, user)
 
 if __name__ == "__main__":
     main()
