@@ -10,8 +10,10 @@ if (typeof SUPABASE_URL !== 'undefined' && typeof SUPABASE_ANON_KEY !== 'undefin
 document.addEventListener("DOMContentLoaded", async () => {
     if (!supabaseClient) {
         console.error("FlightBot error: Supabase credentials missing. Check docs/config.js.");
-        loadAirports();
+        return;
     }
+
+    loadAirports();
 
 
 
@@ -522,4 +524,3 @@ window.selectSuggestion = selectSuggestion;
 
 window.logout = logout;
 window.deleteFlight = deleteFlight;
-window.sendOtp = sendOtp;
