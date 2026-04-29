@@ -77,23 +77,23 @@ def process_user_flights(supabase: Client, user):
         print(f"  -> Searching: {title}...")
         checked_any = True
             
-            data = fetch_flights(flight_config, serpapi_key)
-            if not data:
-                results_html += f"<li><strong>{title}</strong>: Failed to fetch data.</li>"
-                continue
+        data = fetch_flights(flight_config, serpapi_key)
+        if not data:
+            results_html += f"<li><strong>{title}</strong>: Failed to fetch data.</li>"
+            continue
+        
+        flights_list = data.get("best_flights", [])
+        if not flights_list:
+            flights_list = data.get("other_flights", [])
             
-            flights_list = data.get("best_flights", [])
-            if not flights_list:
-                flights_list = data.get("other_flights", [])
-                
-            if not flights_list:
-                results_html += f"<li><strong>{title}</strong>: No flights found.</li>"
-            else:
-                best = flights_list[0] 
-                price = best.get("price", "N/A")
-                search_metadata = data.get("search_metadata", {})
-                prettify_html_file = search_metadata.get("prettify_html_file", "#")
-                results_html += f"<li><p><strong>{title}</strong> - Minimum price: <strong>{price} BRL</strong></p><a href='{prettify_html_file}'>View Prettified Search Results</a></li>"
+        if not flights_list:
+            results_html += f"<li><strong>{title}</strong>: No flights found.</li>"
+        else:
+            best = flights_list[0] 
+            price = best.get("price", "N/A")
+            search_metadata = data.get("search_metadata", {})
+            prettify_html_file = search_metadata.get("prettify_html_file", "#")
+            results_html += f"<li><p><strong>{title}</strong> - Minimum price: <strong>{price} BRL</strong></p><a href='{prettify_html_file}'>View Prettified Search Results</a></li>"
 
 
     results_html += "</ul>"
