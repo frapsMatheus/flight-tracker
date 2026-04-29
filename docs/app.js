@@ -11,6 +11,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
+
+
     // Check current session
     const { data: { session }, error } = await supabaseClient.auth.getSession();
     if (session) {
@@ -35,6 +37,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("login-form").addEventListener("submit", sendMagicLink);
     document.getElementById("keys-form").addEventListener("submit", saveKeys);
     document.getElementById("flight-form").addEventListener("submit", addFlight);
+
+    // Setup Smart Search Autocomplete
+    setupAutocomplete("departure_id", "departure-dropdown");
+    setupAutocomplete("arrival_id", "arrival-dropdown");
 });
 
 function setupLogin() {
@@ -205,8 +211,19 @@ async function addFlight(e) {
     e.preventDefault();
     
     const title = document.getElementById("flight_title").value;
-    const departure_id = document.getElementById("departure_id").value;
-    const arrival_id = document.getElementById("arrival_id").value;
+    let departure_id = document.getElementById("departure_id").value;
+    let arrival_id = document.getElementById("arrival_id").value;
+
+    // Sanitize multiairport queries (comma-separated, no spaces, uppercase 3-letter codes)
+    departure_id = departure_id.split(",").map(t => {
+        t = t.trim();
+        return t.length === 3 ? t.toUpperCase() : t;
+    }).filter(t => t).join(",");
+
+    arrival_id = arrival_id.split(",").map(t => {
+        t = t.trim();
+        return t.length === 3 ? t.toUpperCase() : t;
+    }).filter(t => t).join(",");
     const outbound_date = document.getElementById("outbound_date").value;
     const return_date = document.getElementById("return_date").value;
     const type = parseInt(document.getElementById("flight_type").value);
@@ -285,6 +302,145 @@ function togglePassword(id) {
         icon.className = "fa-solid fa-eye";
     }
 }
+
+// Smart Search Autocomplete
+function setupAutocomplete(inputId, dropdownId) {
+    const input = document.getElementById(inputId);
+    const dropdown = document.getElementById(dropdownId);
+    let debounceTimer;
+
+    input.addEventListener("input", () => {
+        clearTimeout(debounceTimer);
+        const value = input.value;
+        const tokens = value.split(",").map(t => t.trim());
+        const currentToken = tokens[tokens.length - 1];
+
+        if (!currentToken || currentToken.length < 2) {
+            dropdown.classList.add("hidden");
+            return;
+        }
+
+        // Don't search for 3-letter IATA codes or kgmids that the user is explicitly typing
+        if (currentToken.match(/^[A-Z]{3}$/) || currentToken.startsWith("/m/") || currentToken.startsWith("/g/")) {
+            dropdown.classList.add("hidden");
+            return;
+        }
+
+        debounceTimer = setTimeout(() => {
+            fetchSuggestions(currentToken, (suggestions) => {
+                renderSuggestions(suggestions, input, dropdown, tokens);
+            });
+        }, 300);
+    });
+
+    // Close dropdown on click outside
+    document.addEventListener("click", (e) => {
+        if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.classList.add("hidden");
+        }
+    });
+}
+
+async function fetchSuggestions(query, callback) {
+    try {
+        const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(query)}&language=pt&format=json&origin=*&type=item`;
+        const searchRes = await fetch(searchUrl);
+        const searchData = await searchRes.json();
+        const searchResults = searchData.search || [];
+
+        if (searchResults.length === 0) {
+            callback([]);
+            return;
+        }
+
+        const qids = searchResults.slice(0, 5).map(item => item.id).join("|");
+        const getUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qids}&props=claims|labels|descriptions&languages=pt&format=json&origin=*`;
+        const getRes = await fetch(getUrl);
+        const getData = await getRes.json();
+        const entities = getData.entities || {};
+
+        const suggestions = [];
+
+        for (const item of searchResults) {
+            const entity = entities[item.id];
+            if (!entity) continue;
+
+            const label = entity.labels?.pt?.value || item.label || item.id;
+            const desc = entity.descriptions?.pt?.value || item.description || "";
+            const claims = entity.claims || {};
+
+            const iataClaims = claims.P238 || [];
+            const iata = iataClaims[0]?.mainsnak?.datavalue?.value;
+
+            const freebaseClaims = claims.P646 || [];
+            const freebaseId = freebaseClaims[0]?.mainsnak?.datavalue?.value;
+
+            if (iata || freebaseId) {
+                suggestions.push({
+                    id: item.id,
+                    label,
+                    desc,
+                    iata,
+                    freebaseId
+                });
+            }
+        }
+
+        callback(suggestions);
+    } catch (e) {
+        console.error("Error fetching suggestions:", e);
+        callback([]);
+    }
+}
+
+function renderSuggestions(suggestions, input, dropdown, tokens) {
+    if (suggestions.length === 0) {
+        dropdown.classList.add("hidden");
+        return;
+    }
+
+    dropdown.innerHTML = suggestions.map(s => {
+        let optionsHtml = "";
+        if (s.iata) {
+            optionsHtml += `
+                <div class="autocomplete-item" onclick="selectSuggestion('${input.id}', '${dropdown.id}', '${s.iata}')">
+                    <span class="autocomplete-item-code">${s.iata}</span>
+                    <div class="autocomplete-item-title">${s.label}</div>
+                    <div class="autocomplete-item-desc">${s.desc}</div>
+                </div>
+            `;
+        }
+        if (s.freebaseId && s.freebaseId !== s.iata) {
+            optionsHtml += `
+                <div class="autocomplete-item" onclick="selectSuggestion('${input.id}', '${dropdown.id}', '${s.freebaseId}')">
+                    <span class="autocomplete-item-code">${s.freebaseId}</span>
+                    <div class="autocomplete-item-title">${s.label}</div>
+                    <div class="autocomplete-item-desc">${s.desc}</div>
+                </div>
+            `;
+        }
+        return optionsHtml;
+    }).join("");
+
+    dropdown.classList.remove("hidden");
+}
+
+function selectSuggestion(inputId, dropdownId, code) {
+    const input = document.getElementById(inputId);
+    const dropdown = document.getElementById(dropdownId);
+    
+    const value = input.value;
+    const tokens = value.split(",").map(t => t.trim());
+    
+    // Replace the last token with the selected code
+    tokens[tokens.length - 1] = code;
+    
+    input.value = tokens.join(", ") + ", ";
+    dropdown.classList.add("hidden");
+    input.focus();
+}
+
+window.selectSuggestion = selectSuggestion;
 
 window.logout = logout;
 window.deleteFlight = deleteFlight;

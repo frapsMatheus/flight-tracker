@@ -93,12 +93,18 @@
                             
                             <div class="form-row">
                                 <div class="input-group">
-                                    <label for="departure_id">Origin (IATA)</label>
-                                    <input type="text" id="departure_id" placeholder="e.g. GRU" required maxlength="3" oninput="this.value = this.value.toUpperCase()">
+                                    <label for="departure_id">Origin (IATA, City or kgmid)</label>
+                                    <div class="autocomplete-container">
+                                        <input type="text" id="departure_id" placeholder="e.g. GRU, Paris, /m/..." required autocomplete="off">
+                                        <div id="departure-dropdown" class="autocomplete-dropdown hidden"></div>
+                                    </div>
                                 </div>
                                 <div class="input-group">
-                                    <label for="arrival_id">Destination (IATA)</label>
-                                    <input type="text" id="arrival_id" placeholder="e.g. JFK" required maxlength="3" oninput="this.value = this.value.toUpperCase()">
+                                    <label for="arrival_id">Destination (IATA, City or kgmid)</label>
+                                    <div class="autocomplete-container">
+                                        <input type="text" id="arrival_id" placeholder="e.g. JFK, CDG, ORY" required autocomplete="off">
+                                        <div id="arrival-dropdown" class="autocomplete-dropdown hidden"></div>
+                                    </div>
                                 </div>
                             </div>
 
