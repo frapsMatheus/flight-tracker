@@ -404,6 +404,19 @@ input:focus, select:focus {
     transform: scale(1.1);
 }
 
+.btn-edit {
+    background: none;
+    border: none;
+    color: var(--primary);
+    cursor: pointer;
+    font-size: 1.25rem;
+    transition: transform 0.2s ease;
+}
+
+.btn-edit:hover {
+    transform: scale(1.1);
+}
+
 /* Empty State */
 .empty-state {
     display: flex;
