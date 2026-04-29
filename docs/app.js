@@ -32,12 +32,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     // Event Listeners
-    document.getElementById("btn-send-otp").addEventListener("click", sendOtp);
-    document.getElementById("login-form").addEventListener("submit", verifyOtp);
+    document.getElementById("login-form").addEventListener("submit", sendMagicLink);
     document.getElementById("keys-form").addEventListener("submit", saveKeys);
     document.getElementById("flight-form").addEventListener("submit", addFlight);
 });
-
 
 function setupLogin() {
     document.getElementById("login-section").classList.remove("hidden");
@@ -45,7 +43,7 @@ function setupLogin() {
     document.getElementById("nav-auth").innerHTML = ``;
 }
 
-async function sendOtp(e) {
+async function sendMagicLink(e) {
     e.preventDefault();
     const email = document.getElementById("login_email").value;
     if (!email) {
@@ -54,56 +52,25 @@ async function sendOtp(e) {
     }
 
     const btn = document.getElementById("btn-send-otp");
-    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending Link...`;
     btn.disabled = true;
 
     try {
         const { error } = await supabaseClient.auth.signInWithOtp({
             email: email,
             options: {
-                shouldCreateUser: true
+                shouldCreateUser: true,
+                emailRedirectTo: 'https://frapsmatheus.github.io/flight-tracker/'
             }
         });
         if (error) throw error;
         
-        // Show OTP input
-        document.getElementById("otp-group").classList.remove("hidden");
-        alert("Verification code (or magic link) sent to your email!");
+        alert("Magic login link sent! Please check your email to sign in.");
     } catch (e) {
-        console.error("Error sending OTP:", e);
-        alert("Failed to send verification code: " + e.message);
+        console.error("Error sending magic link:", e);
+        alert("Failed to send login link: " + e.message);
     } finally {
-        btn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Send Verification Code`;
-        btn.disabled = false;
-    }
-}
-
-async function verifyOtp(e) {
-    e.preventDefault();
-    const email = document.getElementById("login_email").value;
-    const token = document.getElementById("login_otp").value;
-
-    if (!token) {
-        alert("Please enter the verification code.");
-        return;
-    }
-
-    const btn = document.getElementById("btn-verify-otp");
-    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Verifying...`;
-    btn.disabled = true;
-
-    try {
-        const { error } = await supabaseClient.auth.verifyOtp({
-            email,
-            token,
-            type: 'email'
-        });
-        if (error) throw error;
-    } catch (e) {
-        console.error("Verification failed:", e);
-        alert("Verification failed: " + e.message);
-    } finally {
-        btn.innerHTML = `<i class="fa-solid fa-right-to-bracket"></i> Verify & Login`;
+        btn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Send Magic Link`;
         btn.disabled = false;
     }
 }
