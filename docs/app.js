@@ -131,7 +131,7 @@ async function fetchUserProfile() {
     try {
         const { data, error } = await supabaseClient
             .from('user_profiles')
-            .select('serpapi_key, resend_api_key')
+            .select('serpapi_key')
             .eq('id', currentUser.id)
             .single();
 
@@ -139,9 +139,8 @@ async function fetchUserProfile() {
             throw error;
         }
 
-        if (data) {
-            if (data.serpapi_key) document.getElementById("serpapi_key").value = data.serpapi_key;
-            if (data.resend_api_key) document.getElementById("resend_api_key").value = data.resend_api_key;
+        if (data && data.serpapi_key) {
+            document.getElementById("serpapi_key").value = data.serpapi_key;
         }
     } catch (e) {
         console.error("Error fetching profile:", e);
@@ -151,7 +150,6 @@ async function fetchUserProfile() {
 async function saveKeys(e) {
     e.preventDefault();
     const serpapi_key = document.getElementById("serpapi_key").value;
-    const resend_api_key = document.getElementById("resend_api_key").value;
 
     const btn = document.getElementById("btn-save-keys");
     const originalText = btn.innerHTML;
@@ -164,15 +162,14 @@ async function saveKeys(e) {
             .upsert({
                 id: currentUser.id,
                 email: currentUser.email,
-                serpapi_key: serpapi_key,
-                resend_api_key: resend_api_key
+                serpapi_key: serpapi_key
             });
 
         if (error) throw error;
-        alert("Credentials saved successfully!");
+        alert("Key saved successfully!");
     } catch (e) {
-        console.error("Error saving keys:", e);
-        alert("Failed to save keys: " + e.message);
+        console.error("Error saving key:", e);
+        alert("Failed to save key: " + e.message);
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;

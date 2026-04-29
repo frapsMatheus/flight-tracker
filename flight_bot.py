@@ -42,10 +42,14 @@ def process_user_flights(supabase: Client, user):
     user_id = user.get("id")
     email = user.get("email")
     serpapi_key = user.get("serpapi_key")
-    resend_api_key = user.get("resend_api_key")
+    resend_api_key = os.environ.get("RESEND_API_KEY")
 
-    if not serpapi_key or not resend_api_key:
-        print(f"Skipping user {email}: Missing API keys.")
+    if not serpapi_key:
+        print(f"Skipping user {email}: Missing SerpAPI key.")
+        return
+
+    if not resend_api_key:
+        print(f"Skipping user {email}: Missing master Resend API key in environment.")
         return
 
     print(f"\nProcessing flights for user: {email}...")
