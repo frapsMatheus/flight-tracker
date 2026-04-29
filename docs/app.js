@@ -94,6 +94,11 @@ async function setupDashboard() {
         <button class="btn-secondary" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
     `;
 
+    // Check for stored flights
+    if (typeof STORED_FLIGHTS !== 'undefined' && STORED_FLIGHTS && STORED_FLIGHTS.length > 0) {
+        document.getElementById("stored-flights-wrapper").classList.remove("hidden");
+    }
+
     // Fetch user profile keys
     fetchUserProfile();
     // Fetch observed flights
@@ -441,6 +446,57 @@ function selectSuggestion(inputId, dropdownId, code) {
 }
 
 window.selectSuggestion = selectSuggestion;
+
+async function addStoredFlights() {
+    if (typeof STORED_FLIGHTS === 'undefined' || !STORED_FLIGHTS || STORED_FLIGHTS.length === 0) {
+        alert("No stored flights found in configuration.");
+        return;
+    }
+
+    const btn = document.getElementById("btn-add-stored");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Adding...`;
+    btn.disabled = true;
+
+    let addedCount = 0;
+    for (const flight of STORED_FLIGHTS) {
+        try {
+            const flight_config = {
+                departure_id: flight.departure_id,
+                arrival_id: flight.arrival_id,
+                outbound_date: flight.outbound_date,
+                type: flight.type || 1,
+                adults: flight.adults || 1,
+                currency: "BRL",
+                hl: "pt-br",
+                gl: "br"
+            };
+            if (flight.return_date) {
+                flight_config.return_date = flight.return_date;
+            }
+
+            const { error } = await supabaseClient
+                .from('observed_flights')
+                .insert({
+                    user_id: currentUser.id,
+                    title: flight.title,
+                    flight_config: flight_config
+                });
+
+            if (error) throw error;
+            addedCount++;
+        } catch (e) {
+            console.error("Error adding stored flight:", e);
+        }
+    }
+
+    alert(`Successfully added ${addedCount} stored flight(s).`);
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+    fetchObservedFlights();
+}
+
+window.addStoredFlights = addStoredFlights;
 
 window.logout = logout;
 window.deleteFlight = deleteFlight;
