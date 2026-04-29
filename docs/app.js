@@ -1,6 +1,7 @@
 let supabaseClient = null;
 let currentUser = null;
 let editingFlightId = null;
+let airports = [];
 
 if (typeof SUPABASE_URL !== 'undefined' && typeof SUPABASE_ANON_KEY !== 'undefined' && SUPABASE_URL !== "YOUR_SUPABASE_URL") {
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -9,7 +10,7 @@ if (typeof SUPABASE_URL !== 'undefined' && typeof SUPABASE_ANON_KEY !== 'undefin
 document.addEventListener("DOMContentLoaded", async () => {
     if (!supabaseClient) {
         console.error("FlightBot error: Supabase credentials missing. Check docs/config.js.");
-        return;
+        loadAirports();
     }
 
 
@@ -362,56 +363,65 @@ function setupAutocomplete(inputId, dropdownId) {
     });
 }
 
-async function fetchSuggestions(query, callback) {
+async function loadAirports() {
     try {
-        const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(query)}&language=pt&format=json&origin=*&type=item`;
-        const searchRes = await fetch(searchUrl);
-        const searchData = await searchRes.json();
-        const searchResults = searchData.search || [];
-
-        if (searchResults.length === 0) {
-            callback([]);
-            return;
-        }
-
-        const qids = searchResults.slice(0, 5).map(item => item.id).join("|");
-        const getUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qids}&props=claims|labels|descriptions&languages=pt&format=json&origin=*`;
-        const getRes = await fetch(getUrl);
-        const getData = await getRes.json();
-        const entities = getData.entities || {};
-
-        const suggestions = [];
-
-        for (const item of searchResults) {
-            const entity = entities[item.id];
-            if (!entity) continue;
-
-            const label = entity.labels?.pt?.value || item.label || item.id;
-            const desc = entity.descriptions?.pt?.value || item.description || "";
-            const claims = entity.claims || {};
-
-            const iataClaims = claims.P238 || [];
-            const iata = iataClaims[0]?.mainsnak?.datavalue?.value;
-
-            const freebaseClaims = claims.P646 || [];
-            const freebaseId = freebaseClaims[0]?.mainsnak?.datavalue?.value;
-
-            if (iata || freebaseId) {
-                suggestions.push({
-                    id: item.id,
-                    label,
-                    desc,
-                    iata,
-                    freebaseId
-                });
+        const res = await fetch('aerodromos.csv');
+        const text = await res.text();
+        const lines = text.split('\n');
+        
+        airports = [];
+        // Skip header
+        for (let i = 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+            const parts = lines[i].split(';');
+            if (parts.length >= 6) {
+                const iata = parts[1].trim();
+                if (iata && iata !== '...' && iata !== 'N/I') {
+                    airports.push({
+                        icao: parts[0].trim(),
+                        iata: iata,
+                        name: parts[2].trim(),
+                        city: parts[3].trim(),
+                        state: parts[4].trim(),
+                        country: parts[5].trim()
+                    });
+                }
             }
         }
-
-        callback(suggestions);
+        console.log(`Loaded ${airports.length} airports from CSV.`);
     } catch (e) {
-        console.error("Error fetching suggestions:", e);
-        callback([]);
+        console.error("Error loading airports CSV:", e);
     }
+}
+
+function fetchSuggestions(query, callback) {
+    if (airports.length === 0) {
+        callback([]);
+        return;
+    }
+
+    const lowerQuery = query.toLowerCase().trim();
+    const suggestions = [];
+
+    for (const airport of airports) {
+        // Fuzzy search on NOME AERÓDROMO, Sigla (IATA/ICAO), or Pais
+        const nameMatch = airport.name.toLowerCase().includes(lowerQuery);
+        const iataMatch = airport.iata.toLowerCase().includes(lowerQuery);
+        const icaoMatch = airport.icao.toLowerCase().includes(lowerQuery);
+        const countryMatch = airport.country.toLowerCase().includes(lowerQuery);
+
+        if (nameMatch || iataMatch || icaoMatch || countryMatch) {
+            suggestions.push({
+                iata: airport.iata,
+                label: airport.name,
+                desc: `${airport.city}${airport.state ? `, ${airport.state}` : ''} - ${airport.country}`,
+                freebaseId: null
+            });
+            if (suggestions.length >= 10) break;
+        }
+    }
+
+    callback(suggestions);
 }
 
 function renderSuggestions(suggestions, input, dropdown, tokens) {
