@@ -67,7 +67,12 @@ def process_user_flights(supabase: Client, user):
         return
 
     resend.api_key = resend_api_key
-    results_html = f"<h1>Flight Price Deals Report</h1><p>Hi {email}, here is your update:</p><ul>"
+    results_html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+        <h1 style="color: #1e1b4b; text-align: center; font-size: 1.8em; margin-bottom: 20px;">✈️ Flight Price Bot Report</h1>
+        <p style="font-size: 1.1em; color: #475569; text-align: center; margin-bottom: 30px;">Hi <strong>{email}</strong>, here is your curated deals update:</p>
+        <ul style="padding: 0; margin: 0;">
+    """
     checked_any = False
 
     for flight in flights:
@@ -90,13 +95,39 @@ def process_user_flights(supabase: Client, user):
             results_html += f"<li><strong>{title}</strong>: No flights found.</li>"
         else:
             best = flights_list[0] 
-            price = best.get("price", "N/A")
+            min_price = best.get("price", "N/A")
             search_metadata = data.get("search_metadata", {})
             prettify_html_file = search_metadata.get("prettify_html_file", "#")
-            results_html += f"<li><p><strong>{title}</strong> - Minimum price: <strong>{price} BRL</strong></p><a href='{prettify_html_file}'>View Prettified Search Results</a></li>"
+            
+            examples_html = "<ul style='padding-left: 20px;'>"
+            for idx, item in enumerate(flights_list[:3]):
+                price = item.get("price", "N/A")
+                duration = item.get("total_duration", "N/A")
+                
+                airlines = []
+                for f_segment in item.get("flights", []):
+                    airline = f_segment.get("airline")
+                    if airline and airline not in airlines:
+                        airlines.append(airline)
+                airlines_str = ", ".join(airlines) if airlines else "Multiple Airlines"
+                
+                examples_html += f"<li style='margin-bottom: 5px;'>Option {idx+1}: <strong>{price} BRL</strong> - {airlines_str} (Duration: {duration})</li>"
+            examples_html += "</ul>"
+            
+            results_html += f"""
+            <li style='margin-bottom: 25px; padding: 15px; background-color: #f8fafc; border-radius: 8px; border-left: 4px solid #6366f1; list-style-type: none;'>
+                <h3 style='margin: 0 0 10px 0; color: #4f46e5; font-size: 1.2em;'>{title}</h3>
+                <p style='margin: 5px 0;'>🔥 <strong>Minimum Price Found:</strong> <span style='color: #10b981; font-size: 1.2em; font-weight: bold;'>{min_price} BRL</span></p>
+                <p style='margin: 15px 0 5px 0; font-weight: bold; color: #1e293b;'>Top 3 Flight Examples:</p>
+                {examples_html}
+                <div style='margin-top: 15px;'>
+                    <a href='{prettify_html_file}' style='display: inline-block; background-color: #6366f1; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 0.9em;'>View Prettified Search Results</a>
+                </div>
+            </li>
+            """
 
 
-    results_html += "</ul>"
+    results_html += "</ul></div>"
 
     if checked_any:
         print(f"Sending email report to {email}...")
