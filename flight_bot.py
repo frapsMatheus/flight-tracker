@@ -12,6 +12,18 @@ load_dotenv()
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
+def format_flight_time(time_str):
+    if not time_str:
+        return "N/A"
+    try:
+        if " " in time_str:
+            dt = datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+        else:
+            dt = datetime.datetime.strptime(time_str, "%H:%M")
+        return dt.strftime("%I:%M%p").lstrip("0")
+    except Exception:
+        return time_str
+
 def fetch_flights(flight_config, serpapi_key):
     params = {
         "api_key": serpapi_key,
@@ -105,13 +117,27 @@ def process_user_flights(supabase: Client, user):
                 duration = item.get("total_duration", "N/A")
                 
                 airlines = []
+                segments = []
                 for f_segment in item.get("flights", []):
                     airline = f_segment.get("airline")
                     if airline and airline not in airlines:
                         airlines.append(airline)
+                        
+                    dep = f_segment.get("departure_airport", {})
+                    arr = f_segment.get("arrival_airport", {})
+                    
+                    dep_id = dep.get("id", "Unknown")
+                    dep_time = format_flight_time(dep.get("time"))
+                    
+                    arr_id = arr.get("id", "Unknown")
+                    arr_time = format_flight_time(arr.get("time"))
+                    
+                    segments.append(f"{dep_id} {dep_time} -> {arr_id} {arr_time}")
+                    
                 airlines_str = ", ".join(airlines) if airlines else "Multiple Airlines"
+                route_str = " / ".join(segments) if segments else "Route Unknown"
                 
-                examples_html += f"<li style='margin-bottom: 5px;'>Option {idx+1}: <strong>{price} BRL</strong> - {airlines_str} (Duration: {duration})</li>"
+                examples_html += f"<li style='margin-bottom: 10px;'>Option {idx+1}: <strong>{price} BRL</strong> - {airlines_str}<br><span style='font-size: 0.9em; color: #64748b; font-weight: bold;'>{route_str}</span> <span style='font-size: 0.9em; color: #94a3b8;'>({duration})</span></li>"
             examples_html += "</ul>"
             
             results_html += f"""
