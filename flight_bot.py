@@ -36,11 +36,15 @@ def fetch_flights(flight_config, serpapi_key):
     }
     
     for key, value in flight_config.items():
-        if key != "title":
+        if key != "title" and value is not None and value != "":
             if isinstance(value, (dict, list)):
                 params[key] = json.dumps(value)
             else:
                 params[key] = value
+
+    # If it's a one-way flight (type == 2), SerpAPI breaks if return_date is present
+    if str(params.get("type", "1")) == "2" and "return_date" in params:
+        del params["return_date"]
             
     try:
         response = requests.get("https://serpapi.com/search", params=params)

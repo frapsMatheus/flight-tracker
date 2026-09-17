@@ -41,6 +41,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("login-form").addEventListener("submit", sendMagicLink);
     document.getElementById("keys-form").addEventListener("submit", saveKeys);
     document.getElementById("flight-form").addEventListener("submit", addFlight);
+    document.getElementById("flight_type").addEventListener("change", handleFlightTypeChange);
+    handleFlightTypeChange();
 
     // Setup Smart Search Autocomplete
     setupAutocomplete("departure_id", "departure-dropdown");
@@ -187,29 +189,31 @@ function renderFlights(flights) {
 
     container.innerHTML = flights.map(flight => {
         const config = flight.flight_config;
+        const isOneWay = String(config.type) === "2";
+        const badgeClass = isOneWay ? "badge-one-way" : "badge-round-trip";
+        const typeLabel = isOneWay ? "One Way" : "Round Trip";
         const route = `${config.departure_id} <i class="fa-solid fa-arrow-right"></i> ${config.arrival_id}`;
-        const dates = `${config.outbound_date} ${config.return_date ? `| ${config.return_date}` : ''}`;
+        const dates = `${config.outbound_date}${!isOneWay && config.return_date ? ` | ${config.return_date}` : ''}`;
         
         return `
             <div class="flight-item">
                 <div class="flight-info">
                     <div class="flight-icon">
-                        <i class="fa-solid fa-plane"></i>
+                        <i class="fa-solid ${isOneWay ? 'fa-plane-departure' : 'fa-plane'}"></i>
                     </div>
                     <div class="flight-details">
-                        <h4>${flight.title}</h4>
+                        <h4>${flight.title} <span class="flight-type-badge ${badgeClass}">${typeLabel}</span></h4>
                         <p class="flight-route">${route}</p>
                         <p class="flight-route"><i class="fa-solid fa-calendar-days"></i> ${dates}</p>
                     </div>
                 </div>
-                    <div class="flight-actions" style="display: flex; gap: 0.75rem;">
-                        <button class="btn-edit" onclick="editFlight('${flight.id}')" title="Edit Observation" style="background: none; border: none; color: var(--primary); cursor: pointer; font-size: 1.25rem;">
-                            <i class="fa-solid fa-pen-to-square"></i>
-                        </button>
-                        <button class="btn-delete" onclick="deleteFlight('${flight.id}')" title="Delete Observation">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </div>
+                <div class="flight-actions" style="display: flex; gap: 0.75rem;">
+                    <button class="btn-edit" onclick="editFlight('${flight.id}')" title="Edit Observation" style="background: none; border: none; color: var(--primary); cursor: pointer; font-size: 1.25rem;">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button class="btn-delete" onclick="deleteFlight('${flight.id}')" title="Delete Observation">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
                 </div>
             </div>
         `;
@@ -238,10 +242,12 @@ async function addFlight(e) {
     const type = parseInt(document.getElementById("flight_type").value);
     const adults = parseInt(document.getElementById("adults").value);
 
-    const btn = document.getElementById("btn-add-flight");
-    const originalText = btn.innerHTML;
-    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${editingFlightId ? 'Updating...' : 'Adding...'}`;
-    btn.disabled = true;
+    if (type === 1 && !return_date) {
+        alert("Please select a return date for round trip flights.");
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        return;
+    }
 
     const flight_config = {
         departure_id,
@@ -254,9 +260,14 @@ async function addFlight(e) {
         gl: "br"
     };
 
-    if (return_date) {
+    if (type === 1 && return_date) {
         flight_config.return_date = return_date;
     }
+
+    const btn = document.getElementById("btn-add-flight");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${editingFlightId ? 'Updating...' : 'Adding...'}`;
+    btn.disabled = true;
 
     try {
         let res;
@@ -286,6 +297,7 @@ async function addFlight(e) {
             document.getElementById("flight-form").reset();
             document.getElementById("flight_type").value = "1";
             document.getElementById("adults").value = "1";
+            handleFlightTypeChange();
         }
         
         fetchObservedFlights();
@@ -494,9 +506,10 @@ async function editFlight(id) {
         document.getElementById("flight_title").value = data.title;
         document.getElementById("departure_id").value = config.departure_id;
         document.getElementById("arrival_id").value = config.arrival_id;
+        document.getElementById("flight_type").value = config.type || "1";
+        handleFlightTypeChange();
         document.getElementById("outbound_date").value = config.outbound_date;
         document.getElementById("return_date").value = config.return_date || "";
-        document.getElementById("flight_type").value = config.type;
         document.getElementById("adults").value = config.adults;
 
         document.getElementById("flight_title").focus();
@@ -515,8 +528,32 @@ function cancelEdit() {
     document.getElementById("flight-form").reset();
     document.getElementById("flight_type").value = "1";
     document.getElementById("adults").value = "1";
+    handleFlightTypeChange();
 }
 
+function handleFlightTypeChange() {
+    const flightType = document.getElementById("flight_type").value;
+    const returnDateGroup = document.getElementById("return_date_group");
+    const returnDateInput = document.getElementById("return_date");
+    const datesRow = document.getElementById("dates-row");
+
+    if (flightType === "2") {
+        if (returnDateGroup) returnDateGroup.classList.add("hidden");
+        if (datesRow) datesRow.classList.add("one-way");
+        if (returnDateInput) {
+            returnDateInput.required = false;
+            returnDateInput.value = "";
+        }
+    } else {
+        if (returnDateGroup) returnDateGroup.classList.remove("hidden");
+        if (datesRow) datesRow.classList.remove("one-way");
+        if (returnDateInput) {
+            returnDateInput.required = true;
+        }
+    }
+}
+
+window.handleFlightTypeChange = handleFlightTypeChange;
 window.editFlight = editFlight;
 window.cancelEdit = cancelEdit;
 
