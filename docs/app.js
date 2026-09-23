@@ -339,6 +339,45 @@ function togglePassword(id) {
     }
 }
 
+// String normalization helper (removes accents/diacritics and converts to lowercase)
+function normalizeText(str) {
+    if (!str) return '';
+    return str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+// Damerau-Levenshtein distance helper with transposition tolerance for typos on siglas and words
+function damerauLevenshtein(s1, s2) {
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const d = [];
+
+    for (let i = 0; i <= len1; i++) {
+        d[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+        d[0][j] = j;
+    }
+
+    for (let i = 1; i <= len1; i++) {
+        for (let j = 1; j <= len2; j++) {
+            const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            d[i][j] = Math.min(
+                d[i - 1][j] + 1,       // deletion
+                d[i][j - 1] + 1,       // insertion
+                d[i - 1][j - 1] + cost // substitution
+            );
+            if (i > 1 && j > 1 && s1[i - 1] === s2[j - 2] && s1[i - 2] === s2[j - 1]) {
+                d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1); // transposition
+            }
+        }
+    }
+    return d[len1][len2];
+}
+
 // Smart Search Autocomplete
 function setupAutocomplete(inputId, dropdownId) {
     const input = document.getElementById(inputId);
@@ -356,8 +395,8 @@ function setupAutocomplete(inputId, dropdownId) {
             return;
         }
 
-        // Don't search for 3-letter IATA codes or kgmids that the user is explicitly typing
-        if (currentToken.match(/^[A-Z]{3}$/) || currentToken.startsWith("/m/") || currentToken.startsWith("/g/")) {
+        // Only skip Google Knowledge Graph kgmids
+        if (currentToken.startsWith("/m/") || currentToken.startsWith("/g/")) {
             dropdown.classList.add("hidden");
             return;
         }
@@ -366,7 +405,7 @@ function setupAutocomplete(inputId, dropdownId) {
             fetchSuggestions(currentToken, (suggestions) => {
                 renderSuggestions(suggestions, input, dropdown, tokens);
             });
-        }, 300);
+        }, 200);
     });
 
     // Close dropdown on click outside
@@ -389,15 +428,26 @@ async function loadAirports() {
             if (!lines[i].trim()) continue;
             const parts = lines[i].split(';');
             if (parts.length >= 6) {
+                const icao = parts[0].trim();
                 const iata = parts[1].trim();
+                const name = parts[2].trim();
+                const city = parts[3].trim();
+                const state = parts[4].trim();
+                const country = parts[5].trim();
                 if (iata && iata !== '...' && iata !== 'N/I') {
                     airports.push({
-                        icao: parts[0].trim(),
+                        icao: icao,
                         iata: iata,
-                        name: parts[2].trim(),
-                        city: parts[3].trim(),
-                        state: parts[4].trim(),
-                        country: parts[5].trim()
+                        name: name,
+                        city: city,
+                        state: state,
+                        country: country,
+                        // Pre-normalized fields for fast fuzzy search
+                        normIata: normalizeText(iata),
+                        normIcao: normalizeText(icao),
+                        normName: normalizeText(name),
+                        normCity: normalizeText(city),
+                        normCountry: normalizeText(country)
                     });
                 }
             }
@@ -414,26 +464,112 @@ function fetchSuggestions(query, callback) {
         return;
     }
 
-    const lowerQuery = query.toLowerCase().trim();
-    const suggestions = [];
+    const q = normalizeText(query);
+    if (!q || q.length < 2) {
+        callback([]);
+        return;
+    }
 
-    for (const airport of airports) {
-        // Fuzzy search on NOME AERÓDROMO, Sigla (IATA/ICAO), or Pais
-        const nameMatch = airport.name.toLowerCase().includes(lowerQuery);
-        const iataMatch = airport.iata.toLowerCase().includes(lowerQuery);
-        const icaoMatch = airport.icao.toLowerCase().includes(lowerQuery);
-        const countryMatch = airport.country.toLowerCase().includes(lowerQuery);
+    const scored = [];
+    const qLen = q.length;
 
-        if (nameMatch || iataMatch || icaoMatch || countryMatch) {
-            suggestions.push({
-                iata: airport.iata,
-                label: airport.name,
-                desc: `${airport.city}${airport.state ? `, ${airport.state}` : ''} - ${airport.country}`,
-                freebaseId: null
-            });
-            if (suggestions.length >= 10) break;
+    for (let i = 0; i < airports.length; i++) {
+        const airport = airports[i];
+        let score = 0;
+
+        // 1. Sigla IATA match (highest priority)
+        if (airport.normIata === q) {
+            score = 1000;
+        } else if (airport.normIcao === q) {
+            score = 950;
+        } else if (airport.normIata.startsWith(q)) {
+            score = Math.max(score, 850 + (qLen * 20));
+        } else if (qLen >= 2) {
+            const distIata = damerauLevenshtein(q, airport.normIata);
+            if (qLen === 3 && distIata === 1) {
+                // 1-character typo or transposition on 3-letter IATA sigla
+                score = Math.max(score, 750);
+            } else if (qLen === 2 && distIata === 1 && airport.normIata.startsWith(q[0])) {
+                score = Math.max(score, 500);
+            }
+        }
+
+        // 2. Sigla ICAO match
+        if (airport.normIcao.startsWith(q)) {
+            score = Math.max(score, 650 + (qLen * 10));
+        } else if (qLen >= 3) {
+            const distIcao = damerauLevenshtein(q, airport.normIcao);
+            if (qLen === 4 && distIcao === 1) {
+                score = Math.max(score, 550);
+            }
+        }
+
+        // 3. City match
+        if (airport.normCity) {
+            if (airport.normCity === q) {
+                score = Math.max(score, 500);
+            } else if (airport.normCity.startsWith(q)) {
+                score = Math.max(score, 450);
+            } else if (airport.normCity.includes(q)) {
+                score = Math.max(score, 350);
+            } else if (qLen >= 4) {
+                const words = airport.normCity.split(/\s+/);
+                for (let w = 0; w < words.length; w++) {
+                    const word = words[w];
+                    if (word.startsWith(q)) {
+                        score = Math.max(score, 400);
+                    } else if (word.length >= 3 && damerauLevenshtein(q, word) <= (qLen <= 5 ? 1 : 2)) {
+                        score = Math.max(score, 320);
+                    }
+                }
+            }
+        }
+
+        // 4. Airport Name match
+        if (airport.normName) {
+            if (airport.normName === q) {
+                score = Math.max(score, 480);
+            } else if (airport.normName.startsWith(q)) {
+                score = Math.max(score, 420);
+            } else if (airport.normName.includes(q)) {
+                score = Math.max(score, 300);
+            } else if (qLen >= 4) {
+                const words = airport.normName.split(/\s+/);
+                for (let w = 0; w < words.length; w++) {
+                    const word = words[w];
+                    if (word.startsWith(q)) {
+                        score = Math.max(score, 380);
+                    } else if (word.length >= 3 && damerauLevenshtein(q, word) <= (qLen <= 5 ? 1 : 2)) {
+                        score = Math.max(score, 280);
+                    }
+                }
+            }
+        }
+
+        // 5. Country match
+        if (airport.normCountry && airport.normCountry.includes(q)) {
+            score = Math.max(score, 100);
+        }
+
+        // Slight tie-breaker preference for Brazilian airports
+        if (score > 0 && airport.normCountry === 'brasil') {
+            score += 5;
+        }
+
+        if (score > 0) {
+            scored.push({ airport, score });
         }
     }
+
+    scored.sort((a, b) => b.score - a.score);
+
+    const suggestions = scored.slice(0, 10).map(item => ({
+        iata: item.airport.iata,
+        icao: item.airport.icao,
+        label: item.airport.name,
+        desc: `${item.airport.city}${item.airport.state ? `, ${item.airport.state}` : ''} - ${item.airport.country}`,
+        freebaseId: null
+    }));
 
     callback(suggestions);
 }
@@ -445,26 +581,17 @@ function renderSuggestions(suggestions, input, dropdown, tokens) {
     }
 
     dropdown.innerHTML = suggestions.map(s => {
-        let optionsHtml = "";
-        if (s.iata) {
-            optionsHtml += `
-                <div class="autocomplete-item" onclick="selectSuggestion('${input.id}', '${dropdown.id}', '${s.iata}')">
-                    <span class="autocomplete-item-code">${s.iata}</span>
-                    <div class="autocomplete-item-title">${s.label}</div>
-                    <div class="autocomplete-item-desc">${s.desc}</div>
-                </div>
-            `;
+        let codeLabel = s.iata;
+        if (s.icao && s.icao !== s.iata) {
+            codeLabel += ` · ${s.icao}`;
         }
-        if (s.freebaseId && s.freebaseId !== s.iata) {
-            optionsHtml += `
-                <div class="autocomplete-item" onclick="selectSuggestion('${input.id}', '${dropdown.id}', '${s.freebaseId}')">
-                    <span class="autocomplete-item-code">${s.freebaseId}</span>
-                    <div class="autocomplete-item-title">${s.label}</div>
-                    <div class="autocomplete-item-desc">${s.desc}</div>
-                </div>
-            `;
-        }
-        return optionsHtml;
+        return `
+            <div class="autocomplete-item" onclick="selectSuggestion('${input.id}', '${dropdown.id}', '${s.iata}')">
+                <span class="autocomplete-item-code">${codeLabel}</span>
+                <div class="autocomplete-item-title">${s.label}</div>
+                <div class="autocomplete-item-desc">${s.desc}</div>
+            </div>
+        `;
     }).join("");
 
     dropdown.classList.remove("hidden");
