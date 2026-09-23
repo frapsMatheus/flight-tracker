@@ -477,76 +477,114 @@ function fetchSuggestions(query, callback) {
         const airport = airports[i];
         let score = 0;
 
-        // 1. Sigla IATA match (highest priority)
+        // 1. Exact IATA
         if (airport.normIata === q) {
             score = 1000;
         } else if (airport.normIcao === q) {
             score = 950;
-        } else if (airport.normIata.startsWith(q)) {
-            score = Math.max(score, 850 + (qLen * 20));
-        } else if (qLen >= 2) {
+        }
+
+        // 2. Exact City or Name match
+        if (airport.normCity && airport.normCity === q) {
+            score = Math.max(score, 900);
+        }
+        if (airport.normName && airport.normName === q) {
+            score = Math.max(score, 880);
+        }
+
+        // 3. IATA prefix
+        if (airport.normIata.startsWith(q)) {
+            score = Math.max(score, 820 + (qLen * 20));
+        }
+
+        // 4. City starts with query (e.g. "salv" -> "salvador", "curit" -> "curitiba")
+        if (airport.normCity && airport.normCity.startsWith(q)) {
+            score = Math.max(score, 800 + Math.min(qLen * 10, 80));
+        }
+
+        // 5. Name starts with query
+        if (airport.normName && airport.normName.startsWith(q)) {
+            score = Math.max(score, 780 + Math.min(qLen * 10, 80));
+        }
+
+        // 6. Fuzzy match on full city or name string (e.g. "salvdor" -> "salvador", "rio de janero")
+        if (airport.normCity && qLen >= 4) {
+            const cityDist = damerauLevenshtein(q, airport.normCity);
+            const maxCityAllowedDist = qLen <= 6 ? 1 : 2;
+            if (cityDist <= maxCityAllowedDist) {
+                score = Math.max(score, 760 - (cityDist * 30));
+            }
+        }
+        if (airport.normName && qLen >= 4) {
+            const nameDist = damerauLevenshtein(q, airport.normName);
+            const maxNameAllowedDist = qLen <= 6 ? 1 : 2;
+            if (nameDist <= maxNameAllowedDist) {
+                score = Math.max(score, 755 - (nameDist * 30));
+            }
+        }
+
+        // 7. Fuzzy IATA match (typo or transposition on 3-letter IATA code)
+        if (qLen === 3) {
             const distIata = damerauLevenshtein(q, airport.normIata);
-            if (qLen === 3 && distIata === 1) {
-                // 1-character typo or transposition on 3-letter IATA sigla
+            if (distIata === 1) {
                 score = Math.max(score, 750);
-            } else if (qLen === 2 && distIata === 1 && airport.normIata.startsWith(q[0])) {
+            }
+        } else if (qLen === 2) {
+            const distIata = damerauLevenshtein(q, airport.normIata);
+            if (distIata === 1 && airport.normIata.startsWith(q[0])) {
                 score = Math.max(score, 500);
             }
         }
 
-        // 2. Sigla ICAO match
+        // 8. City word prefix or fuzzy word (e.g. "janeiro" -> "Rio de Janeiro")
+        if (airport.normCity && qLen >= 3) {
+            const words = airport.normCity.split(/\s+/);
+            for (let w = 0; w < words.length; w++) {
+                const word = words[w];
+                if (word.startsWith(q)) {
+                    score = Math.max(score, 720);
+                    break;
+                } else if (word.length >= 4 && damerauLevenshtein(q, word) <= (qLen <= 6 ? 1 : 2)) {
+                    score = Math.max(score, 680);
+                    break;
+                }
+            }
+        }
+
+        // 9. Airport Name word prefix or fuzzy word
+        if (airport.normName && qLen >= 3) {
+            const words = airport.normName.split(/\s+/);
+            for (let w = 0; w < words.length; w++) {
+                const word = words[w];
+                if (word.startsWith(q)) {
+                    score = Math.max(score, 700);
+                    break;
+                } else if (word.length >= 4 && damerauLevenshtein(q, word) <= (qLen <= 6 ? 1 : 2)) {
+                    score = Math.max(score, 650);
+                    break;
+                }
+            }
+        }
+
+        // 10. ICAO prefix & fuzzy match
         if (airport.normIcao.startsWith(q)) {
-            score = Math.max(score, 650 + (qLen * 10));
-        } else if (qLen >= 3) {
+            score = Math.max(score, 600 + (qLen * 10));
+        } else if (qLen === 4) {
             const distIcao = damerauLevenshtein(q, airport.normIcao);
-            if (qLen === 4 && distIcao === 1) {
+            if (distIcao === 1) {
                 score = Math.max(score, 550);
             }
         }
 
-        // 3. City match
-        if (airport.normCity) {
-            if (airport.normCity === q) {
-                score = Math.max(score, 500);
-            } else if (airport.normCity.startsWith(q)) {
-                score = Math.max(score, 450);
-            } else if (airport.normCity.includes(q)) {
-                score = Math.max(score, 350);
-            } else if (qLen >= 4) {
-                const words = airport.normCity.split(/\s+/);
-                for (let w = 0; w < words.length; w++) {
-                    const word = words[w];
-                    if (word.startsWith(q)) {
-                        score = Math.max(score, 400);
-                    } else if (word.length >= 3 && damerauLevenshtein(q, word) <= (qLen <= 5 ? 1 : 2)) {
-                        score = Math.max(score, 320);
-                    }
-                }
-            }
+        // 11. Substring in city or name
+        if (airport.normCity && airport.normCity.includes(q)) {
+            score = Math.max(score, 450);
+        }
+        if (airport.normName && airport.normName.includes(q)) {
+            score = Math.max(score, 400);
         }
 
-        // 4. Airport Name match
-        if (airport.normName) {
-            if (airport.normName === q) {
-                score = Math.max(score, 480);
-            } else if (airport.normName.startsWith(q)) {
-                score = Math.max(score, 420);
-            } else if (airport.normName.includes(q)) {
-                score = Math.max(score, 300);
-            } else if (qLen >= 4) {
-                const words = airport.normName.split(/\s+/);
-                for (let w = 0; w < words.length; w++) {
-                    const word = words[w];
-                    if (word.startsWith(q)) {
-                        score = Math.max(score, 380);
-                    } else if (word.length >= 3 && damerauLevenshtein(q, word) <= (qLen <= 5 ? 1 : 2)) {
-                        score = Math.max(score, 280);
-                    }
-                }
-            }
-        }
-
-        // 5. Country match
+        // 12. Country match
         if (airport.normCountry && airport.normCountry.includes(q)) {
             score = Math.max(score, 100);
         }
